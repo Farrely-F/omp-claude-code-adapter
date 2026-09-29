@@ -1,5 +1,18 @@
 # OMP Claude Code Adapter
 
+```text
+  ___  __  __ ____
+ / _ \|  \/  |  _ \
+| | | | |\/| | |_) |
+| |_| | |  | |  __/
+ \___/|_|  |_|_|
+
++-------+   prompt + history   +-----------------+   claude -p   +-----------------+
+|  OMP  | ------------------>  | claude-code-cli | ------------> | Claude Code CLI |
+|       | <------------------  |  (this adapter) | <------------ |  (local login)  |
++-------+    streamed reply    +-----------------+    stdout     +-----------------+
+```
+
 An OMP custom model provider that runs the locally authenticated Claude Code CLI. It pins the current Claude Opus 5.5, Sonnet 5.5, and Haiku 4.5 model IDs and exposes supported effort controls for Opus and Sonnet.
 
 ## Requirements
