@@ -36,7 +36,7 @@ type ClaudeModelConfig = {
 	maxTokens: number;
 	supportsTools: boolean;
 	reasoning: boolean;
-	thinking?: { mode: "effort"; efforts: ClaudeEffort[]; defaultLevel: ClaudeEffort };
+	thinking?: { mode: "effort"; efforts: ClaudeEffort[]; defaultLevel?: ClaudeEffort };
 };
 
 const opusEffort: ClaudeModelConfig["thinking"] = {
@@ -81,6 +81,35 @@ export const claudeModels: ClaudeModelConfig[] = [
 		supportsTools: false,
 		reasoning: false,
 	},
+	{
+		id: "opus",
+		name: "Claude Opus (latest via Claude Code)",
+		input: ["text"],
+		contextWindow: 1_000_000,
+		maxTokens: 128_000,
+		supportsTools: false,
+		reasoning: true,
+		thinking: { mode: "effort", efforts: ["low", "medium", "high", "xhigh", "max"] },
+	},
+	{
+		id: "sonnet",
+		name: "Claude Sonnet (latest via Claude Code)",
+		input: ["text"],
+		contextWindow: 1_000_000,
+		maxTokens: 128_000,
+		supportsTools: false,
+		reasoning: true,
+		thinking: { mode: "effort", efforts: ["low", "medium", "high", "xhigh", "max"] },
+	},
+	{
+		id: "haiku",
+		name: "Claude Haiku (latest via Claude Code)",
+		input: ["text"],
+		contextWindow: 200_000,
+		maxTokens: 64_000,
+		supportsTools: false,
+		reasoning: false,
+	},
 ];
 
 export function buildClaudeArgs(prompt: string, modelId: string, effort?: ClaudeEffort): string[] {
@@ -91,8 +120,8 @@ export function buildClaudeArgs(prompt: string, modelId: string, effort?: Claude
 
 function resolveClaudeEffort(
 	effort: SimpleStreamOptions["reasoning"] | undefined,
-	defaultLevel: ClaudeEffort,
-): ClaudeEffort {
+	defaultLevel: ClaudeEffort | undefined,
+): ClaudeEffort | undefined {
 	if (effort === "minimal") return "low";
 	return effort ?? defaultLevel;
 }

@@ -17,7 +17,7 @@ gh auth login
 gh auth setup-git
 gh repo clone Farrely-F/omp-claude-code-adapter
 cd omp-claude-code-adapter
-git checkout v1.0.1
+git checkout v1.0.2
 bun install --frozen-lockfile
 omp install .
 ```
@@ -28,19 +28,25 @@ Start a new OMP session after installation. Confirm discovery with:
 omp models claude-code-cli
 ```
 
-Select the explicitly versioned models with `/model`:
+For rolling selections, choose the Claude Code CLI aliases:
+
+- `claude-code-cli/opus` — Claude Code's current Opus model
+- `claude-code-cli/sonnet` — Claude Code's current Sonnet model
+- `claude-code-cli/haiku` — Claude Code's current Haiku model
+
+These are the recommended latest-model choices. They pass `opus`, `sonnet`, or `haiku` to the local CLI, which resolves the alias according to its installed version. The adapter does not force an effort setting unless OMP explicitly supplies one, so Claude Code's default for the resolved model applies. To use the rolling Sonnet alias:
+
+```sh
+omp --model claude-code-cli/sonnet
+```
+
+For reproducibility, select the pinned IDs:
 
 - `claude-code-cli/claude-opus-5-5` — 1M context, 128K output; effort levels `low`, `medium`, `high`, `xhigh`, `max` (default `medium`).
 - `claude-code-cli/claude-sonnet-5-5` — 1M context, 128K output; effort levels `low`, `medium`, `high`, `xhigh`, `max` (default `high`).
-- `claude-code-cli/claude-haiku-4-5` — 200K context, 64K output; Haiku supports extended thinking, but this adapter does not expose its budget control.
+- `claude-code-cli/claude-haiku-4-5` — 200K context, 64K output; no effort selector in this adapter.
 
-These IDs are passed to Claude Code as pinned model IDs instead of mutable `opus`/`sonnet`/`haiku` aliases. Use OMP's `--thinking` flag for Opus and Sonnet, for example:
-
-```sh
-omp --model claude-code-cli/claude-sonnet-5-5 --thinking high
-```
-
-Specs: [Opus 5.5](https://platform.claude.com/docs/en/models/opus-5-5/overview), [Sonnet 5.5](https://platform.claude.com/docs/en/models/sonnet-5-5/overview), [Haiku 4.5](https://platform.claude.com/docs/en/models/haiku-4-5/overview). OMP displays the published model limits; Claude Code's account and local context settings may further restrict effective capacity.
+Pinned limits come from [Anthropic's current model specs](https://platform.claude.com/docs/en/models/overview). The rolling aliases' catalog limits reflect the current releases in this adapter version; if an alias advances to a model with different limits, update the adapter metadata. Claude Code must also be updated before its aliases resolve to a newly released model.
 
 ## Security and behavior
 

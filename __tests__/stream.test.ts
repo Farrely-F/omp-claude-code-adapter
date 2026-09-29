@@ -17,13 +17,35 @@ describe("Claude Code model transport", () => {
 		]);
 	});
 
+	it("offers rolling aliases that defer version resolution to Claude Code", () => {
+		expect(claudeModels.filter(model => ["opus", "sonnet", "haiku"].includes(model.id)).map(model => model.id)).toEqual([
+			"opus",
+			"sonnet",
+			"haiku",
+		]);
+		expect(claudeModels.find(model => model.id === "sonnet")?.thinking).toEqual({
+			mode: "effort",
+			efforts: ["low", "medium", "high", "xhigh", "max"],
+		});
+		expect(buildClaudeArgs("prompt", "sonnet")).toEqual([
+			"-p",
+			"prompt",
+			"--output-format",
+			"stream-json",
+			"--verbose",
+			"--include-partial-messages",
+			"--model",
+			"sonnet",
+		]);
+	});
+
 	it("omits CLI effort for Haiku, which does not support effort levels", () => {
 		expect(buildClaudeArgs("prompt", "claude-haiku-4-5")).not.toContain("--effort");
 	});
 
 	it("registers versioned models with their actual context and output limits", () => {
 		expect(
-			claudeModels.map(({ id, name, contextWindow, maxTokens }) => ({
+			claudeModels.filter(model => model.id.startsWith("claude-")).map(({ id, name, contextWindow, maxTokens }) => ({
 				id,
 				name,
 				contextWindow,
