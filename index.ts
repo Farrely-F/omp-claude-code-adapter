@@ -55,7 +55,7 @@ export const claudeModels: ClaudeModelConfig[] = [
 	{
 		id: "claude-opus-5-5",
 		name: "Claude Opus 5.5",
-		input: ["text"],
+		input: ["text", "image"],
 		contextWindow: 1_000_000,
 		maxTokens: 128_000,
 		supportsTools: false,
@@ -65,7 +65,7 @@ export const claudeModels: ClaudeModelConfig[] = [
 	{
 		id: "claude-sonnet-5-5",
 		name: "Claude Sonnet 5.5",
-		input: ["text"],
+		input: ["text", "image"],
 		contextWindow: 1_000_000,
 		maxTokens: 128_000,
 		supportsTools: false,
@@ -75,7 +75,7 @@ export const claudeModels: ClaudeModelConfig[] = [
 	{
 		id: "claude-haiku-4-5",
 		name: "Claude Haiku 4.5",
-		input: ["text"],
+		input: ["text", "image"],
 		contextWindow: 200_000,
 		maxTokens: 64_000,
 		supportsTools: false,
@@ -84,7 +84,7 @@ export const claudeModels: ClaudeModelConfig[] = [
 	{
 		id: "opus",
 		name: "Claude Opus (latest via Claude Code)",
-		input: ["text"],
+		input: ["text", "image"],
 		contextWindow: 1_000_000,
 		maxTokens: 128_000,
 		supportsTools: false,
@@ -94,7 +94,7 @@ export const claudeModels: ClaudeModelConfig[] = [
 	{
 		id: "sonnet",
 		name: "Claude Sonnet (latest via Claude Code)",
-		input: ["text"],
+		input: ["text", "image"],
 		contextWindow: 1_000_000,
 		maxTokens: 128_000,
 		supportsTools: false,
@@ -104,7 +104,7 @@ export const claudeModels: ClaudeModelConfig[] = [
 	{
 		id: "haiku",
 		name: "Claude Haiku (latest via Claude Code)",
-		input: ["text"],
+		input: ["text", "image"],
 		contextWindow: 200_000,
 		maxTokens: 64_000,
 		supportsTools: false,
@@ -112,8 +112,18 @@ export const claudeModels: ClaudeModelConfig[] = [
 	},
 ];
 
-export function buildClaudeArgs(prompt: string, modelId: string, effort?: ClaudeEffort): string[] {
-	const args = ["-p", prompt, "--output-format", "stream-json", "--verbose", "--include-partial-messages", "--model", modelId];
+export function buildClaudeArgs(modelId: string, effort?: ClaudeEffort): string[] {
+	const args = [
+		"-p",
+		"--input-format",
+		"stream-json",
+		"--output-format",
+		"stream-json",
+		"--verbose",
+		"--include-partial-messages",
+		"--model",
+		modelId,
+	];
 	if (effort) args.push("--effort", effort);
 	return args;
 }
@@ -126,50 +136,96 @@ function resolveClaudeEffort(
 	return effort ?? defaultLevel;
 }
 
-function renderContent(content: string | Array<{ type: string } & object>): string {
-	if (typeof content === "string") return content;
-	return content
-		.map(block => {
-			if (block.type === "text" && "text" in block && typeof block.text === "string") return block.text;
-			if (block.type === "image") throw new Error("Claude Code CLI model currently supports text-only OMP context");
-			return "";
-		})
-		.filter(Boolean)
-		.join("\n");
+type ClaudeContentBlock =
+	| { type: "text"; text: string }
+	| { type: "image"; source: { type: "base64"; media_type: string; data: string } };
+
+type OmpBlock = { type: string } & object;
+
+function pushBlock(blocks: ClaudeContentBlock[], block: ClaudeContentBlock): void {
+	if (block.type !== "text") {
+		blocks.push(block);
+		return;
+	}
+	if (!block.text) return;
+	const last = blocks.at(-1);
+	if (last?.type === "text") last.text += block.text;
+	else blocks.push({ ...block });
 }
 
-function renderMessage(message: Message): string {
+function imageBlock(block: OmpBlock): ClaudeContentBlock | undefined {
+	if (!("data" in block) || typeof block.data !== "string") return undefined;
+	if (!("mimeType" in block) || typeof block.mimeType !== "string") return undefined;
+	return { type: "image", source: { type: "base64", media_type: block.mimeType, data: block.data } };
+}
+
+function renderParts(content: string | OmpBlock[], renderBlock: (block: OmpBlock) => ClaudeContentBlock | undefined): ClaudeContentBlock[] {
+	const parts: ClaudeContentBlock[] = [];
+	if (typeof content === "string") {
+		pushBlock(parts, { type: "text", text: content });
+		return parts;
+	}
+	for (const block of content) {
+		const rendered = renderBlock(block);
+		if (!rendered || (rendered.type === "text" && !rendered.text)) continue;
+		if (parts.length) pushBlock(parts, { type: "text", text: "\n" });
+		pushBlock(parts, rendered);
+	}
+	return parts;
+}
+
+function renderUserBlock(block: OmpBlock): ClaudeContentBlock | undefined {
+	if (block.type === "text" && "text" in block && typeof block.text === "string") return { type: "text", text: block.text };
+	if (block.type === "image") return imageBlock(block);
+	return undefined;
+}
+
+function renderAssistantBlock(block: OmpBlock): ClaudeContentBlock | undefined {
+	if (block.type === "toolCall" && "name" in block && typeof block.name === "string" && "arguments" in block) {
+		return { type: "text", text: `[OMP tool call: ${block.name} ${JSON.stringify(block.arguments)}]` };
+	}
+	return renderUserBlock(block);
+}
+
+function renderMessage(message: Message): ClaudeContentBlock[] {
+	const blocks: ClaudeContentBlock[] = [];
+	const append = (header: string, parts: ClaudeContentBlock[]) => {
+		pushBlock(blocks, { type: "text", text: header });
+		for (const part of parts) pushBlock(blocks, part);
+	};
 	if (message.role === "user" || message.role === "developer") {
-		return `[${message.role}]\n${renderContent(message.content)}`;
+		append(`[${message.role}]\n`, renderParts(message.content, renderUserBlock));
+	} else if (message.role === "assistant") {
+		append("[assistant]\n", renderParts(message.content, renderAssistantBlock));
+	} else {
+		append(`[tool result: ${message.toolName}]\n`, renderParts(message.content, renderUserBlock));
 	}
-	if (message.role === "assistant") {
-		const content = message.content
-			.map(block => {
-				if (block.type === "text") return block.text;
-				if (block.type === "toolCall") return `[OMP tool call: ${block.name} ${JSON.stringify(block.arguments)}]`;
-				if (block.type === "image") throw new Error("Claude Code CLI model currently supports text-only OMP context");
-				return "";
-			})
-			.filter(Boolean)
-			.join("\n");
-		return `[assistant]\n${content}`;
-	}
-	return `[tool result: ${message.toolName}]\n${renderContent(message.content)}`;
+	return blocks;
 }
 
-export function formatContext(context: Context): string {
+export function formatContext(context: Context): ClaudeContentBlock[] {
 	const system = context.systemPrompt?.length ? context.systemPrompt.join("\n\n") : "";
-	const transcript = context.messages.map(renderMessage).filter(Boolean).join("\n\n");
-	return [
+	const blocks: ClaudeContentBlock[] = [];
+	const text = (value: string) => pushBlock(blocks, { type: "text", text: value });
+	text(
 		"You are Claude Code running as the selected model in OMP. Complete the current task in this working directory using Claude Code's own tools. Treat the OMP transcript below as conversation context. Do not claim to have used OMP tools.",
-		system ? `## OMP system instructions\n${system}` : "",
-		`## OMP conversation\n${transcript}`,
-	]
-		.filter(Boolean)
-		.join("\n\n");
+	);
+	if (system) text(`\n\n## OMP system instructions\n${system}`);
+	text("\n\n## OMP conversation\n");
+	context.messages.forEach((message, index) => {
+		if (index) text("\n\n");
+		for (const block of renderMessage(message)) pushBlock(blocks, block);
+	});
+	return blocks;
 }
 
-export function decodeClaudeEvent(line: string): { text: string } | { result: string } | { error: string } | null {
+export function buildClaudeInput(blocks: ClaudeContentBlock[]): string {
+	return `${JSON.stringify({ type: "user", message: { role: "user", content: blocks } })}\n`;
+}
+
+export function decodeClaudeEvent(
+	line: string,
+): { text: string } | { thinking: string } | { result: string } | { error: string } | null {
 	let event: unknown;
 	try {
 		event = JSON.parse(line);
@@ -185,13 +241,12 @@ export function decodeClaudeEvent(line: string): { text: string } | { result: st
 			"delta" in streamEvent &&
 			streamEvent.delta !== null &&
 			typeof streamEvent.delta === "object" &&
-			"type" in streamEvent.delta &&
-			streamEvent.delta.type === "text_delta"
+			"type" in streamEvent.delta
 		) {
-			return {
-				text:
-					"text" in streamEvent.delta && typeof streamEvent.delta.text === "string" ? streamEvent.delta.text : "",
-			};
+			const { delta } = streamEvent;
+			if (delta.type === "text_delta") return { text: "text" in delta && typeof delta.text === "string" ? delta.text : "" };
+			if (delta.type === "thinking_delta")
+				return { thinking: "thinking" in delta && typeof delta.thinking === "string" ? delta.thinking : "" };
 		}
 	}
 	if ("type" in event && event.type === "result") {
@@ -229,7 +284,10 @@ function streamClaudeCode(
 	const partial = (): AssistantMessage => ({ ...message, content: message.content.slice() });
 	const startedAt = Date.now();
 	let fullText = "";
-	let textStarted = false;
+	let fullThinking = "";
+	let thinkingIndex = -1;
+	let thinkingOpen = false;
+	let textIndex = -1;
 	let settled = false;
 
 	const fail = (reason: "aborted" | "error", detail: string) => {
@@ -238,18 +296,41 @@ function streamClaudeCode(
 		message.stopReason = reason;
 		message.errorMessage = detail;
 		message.duration = Date.now() - startedAt;
+		closeThinking();
 		stream.push({ type: "error", reason, error: partial() });
+	};
+
+	const closeThinking = () => {
+		if (!thinkingOpen) return;
+		thinkingOpen = false;
+		stream.push({ type: "thinking_end", contentIndex: thinkingIndex, content: fullThinking, partial: partial() });
+	};
+
+	const pushThinking = (thinking: string) => {
+		// The CLI streams empty thinking deltas when it withholds reasoning text; open a thinking block only for real text.
+		if (!thinking || textIndex >= 0) return;
+		if (!thinkingOpen) {
+			thinkingOpen = true;
+			thinkingIndex = message.content.length;
+			message.content.push({ type: "thinking", thinking: "" });
+			stream.push({ type: "thinking_start", contentIndex: thinkingIndex, partial: partial() });
+		}
+		fullThinking += thinking;
+		message.content[thinkingIndex] = { type: "thinking", thinking: fullThinking };
+		stream.push({ type: "thinking_delta", contentIndex: thinkingIndex, delta: thinking, partial: partial() });
 	};
 
 	const pushText = (text: string) => {
 		if (!text) return;
-		if (!textStarted) {
-			textStarted = true;
-			stream.push({ type: "text_start", contentIndex: 0, partial: partial() });
+		if (textIndex < 0) {
+			closeThinking();
+			textIndex = message.content.length;
+			message.content.push({ type: "text", text: "" });
+			stream.push({ type: "text_start", contentIndex: textIndex, partial: partial() });
 		}
 		fullText += text;
-		message.content = [{ type: "text", text: fullText }];
-		stream.push({ type: "text_delta", contentIndex: 0, delta: text, partial: partial() });
+		message.content[textIndex] = { type: "text", text: fullText };
+		stream.push({ type: "text_delta", contentIndex: textIndex, delta: text, partial: partial() });
 	};
 
 	try {
@@ -258,7 +339,7 @@ function streamClaudeCode(
 			fail("aborted", "Claude Code request was cancelled");
 			return stream;
 		}
-		const prompt = formatContext(context);
+		const input = buildClaudeInput(formatContext(context));
 		const env = { ...process.env };
 		for (const key of ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_OAUTH_TOKEN"]) delete env[key];
 		const selectedModel = claudeModels.find(candidate => candidate.id === model.id);
@@ -266,11 +347,14 @@ function streamClaudeCode(
 			? resolveClaudeEffort(options?.reasoning, selectedModel.thinking.defaultLevel)
 			: undefined;
 		const command = process.env.CLAUDE_CODE_CLI || "claude";
-		const child = spawn(command, buildClaudeArgs(prompt, model.id, effort), {
+		const child = spawn(command, buildClaudeArgs(model.id, effort), {
 			cwd: process.cwd(),
 			env,
-			stdio: ["ignore", "pipe", "pipe"],
+			stdio: ["pipe", "pipe", "pipe"],
 		});
+		// A failed spawn or early CLI exit surfaces through "error"/"close"; a broken stdin pipe adds nothing.
+		child.stdin.on("error", () => {});
+		child.stdin.end(input);
 
 		let stdoutBuffer = "";
 		let stderr = "";
@@ -283,6 +367,7 @@ function streamClaudeCode(
 			const decoded = decodeClaudeEvent(line);
 			if (!decoded) return;
 			if ("text" in decoded) pushText(decoded.text);
+			else if ("thinking" in decoded) pushThinking(decoded.thinking);
 			else if ("result" in decoded) finalResult = decoded.result;
 			else finalError = decoded.error;
 		};
@@ -328,7 +413,8 @@ function streamClaudeCode(
 			settled = true;
 			message.timestamp = Date.now();
 			message.duration = Date.now() - startedAt;
-			if (textStarted) stream.push({ type: "text_end", contentIndex: 0, content: fullText, partial: partial() });
+			closeThinking();
+			stream.push({ type: "text_end", contentIndex: textIndex, content: fullText, partial: partial() });
 			stream.push({ type: "done", reason: "stop", message: partial() });
 		});
 	} catch (error) {

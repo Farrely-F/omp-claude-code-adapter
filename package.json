@@ -1,6 +1,6 @@
 {
   "name": "omp-claude-code-adapter",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "Use a locally authenticated Claude Code CLI as an OMP model provider.",
   "type": "module",
   "files": ["index.ts", "README.md", "__tests__", "bun.lock"],

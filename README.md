@@ -26,7 +26,7 @@ An OMP custom model provider that runs the locally authenticated Claude Code CLI
 Install the tagged extension directly:
 
 ```sh
-omp install github:Farrely-F/omp-claude-code-adapter#v1.0.3
+omp install github:Farrely-F/omp-claude-code-adapter#v1.0.4
 ```
 
 Start a new OMP session after installation. Confirm discovery with:
@@ -60,7 +60,8 @@ Pinned limits come from [Anthropic's current model specs](https://platform.claud
 - The adapter starts `claude -p` in OMP's current working directory and forwards the OMP system prompt and conversation.
 - Claude Code handles its own tools and permissions. OMP's tool approval settings do not control actions taken by the nested CLI. The adapter does not set a permissive Claude Code permission mode; headless actions that require a prompt may be denied unless configured in Claude Code itself.
 - The adapter removes `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, and `ANTHROPIC_OAUTH_TOKEN` from the child environment so Claude Code uses its own local authentication.
-- All three upstream models accept images, but this adapter currently forwards only text and rejects image blocks; it does not transfer OMP's inline image data to Claude Code.
+- Images in user, developer, assistant, and tool-result messages are forwarded to Claude Code as base64 image blocks, in their original position within the transcript. The prompt goes to the CLI on stdin (`--input-format stream-json`), not as a command-line argument.
+- Thinking deltas from the CLI are forwarded to OMP as thinking blocks. In headless mode (`claude -p`) Claude Code currently sends empty thinking deltas, so no reasoning text appears yet; the adapter shows a thinking block only when the CLI supplies text and never invents any.
 - Set `CLAUDE_CODE_CLI` if the executable is not available as `claude` on `PATH`.
 
 ## Local development
