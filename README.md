@@ -6,20 +6,14 @@ An OMP custom model provider that runs the locally authenticated Claude Code CLI
 
 - OMP 18.4.3
 - Claude Code CLI installed and signed in on the same device
-- Access to this GitHub repository (it is private)
+- GitHub access is required only for private forks; the upstream repository is public.
 
 ## Install
 
-Install from a tagged checkout. This repository is private, so the device must have GitHub access configured first:
+Install the tagged extension directly:
 
 ```sh
-gh auth login
-gh auth setup-git
-gh repo clone Farrely-F/omp-claude-code-adapter
-cd omp-claude-code-adapter
-git checkout v1.0.2
-bun install --frozen-lockfile
-omp install .
+omp install github:Farrely-F/omp-claude-code-adapter#v1.0.3
 ```
 
 Start a new OMP session after installation. Confirm discovery with:
