@@ -2,8 +2,8 @@ import { describe, expect, it } from "bun:test";
 import { buildClaudeArgs, claudeModels, decodeClaudeEvent, formatContext } from "../index";
 
 describe("Claude Code model transport", () => {
-	it("passes the selected model alias and thinking effort to Claude Code", () => {
-		expect(buildClaudeArgs("prompt", "opus", "high")).toEqual([
+	it("passes a pinned Claude model ID and supported effort to the CLI", () => {
+		expect(buildClaudeArgs("prompt", "claude-opus-5-5", "high")).toEqual([
 			"-p",
 			"prompt",
 			"--output-format",
@@ -11,19 +11,44 @@ describe("Claude Code model transport", () => {
 			"--verbose",
 			"--include-partial-messages",
 			"--model",
-			"opus",
+			"claude-opus-5-5",
 			"--effort",
 			"high",
 		]);
 	});
 
-	it("registers the three Claude model aliases with effort controls", () => {
-		expect(claudeModels.map(model => model.id)).toEqual(["opus", "sonnet", "haiku"]);
+	it("omits CLI effort for Haiku, which does not support effort levels", () => {
+		expect(buildClaudeArgs("prompt", "claude-haiku-4-5")).not.toContain("--effort");
+	});
+
+	it("registers versioned models with their actual context and output limits", () => {
+		expect(
+			claudeModels.map(({ id, name, contextWindow, maxTokens }) => ({
+				id,
+				name,
+				contextWindow,
+				maxTokens,
+			})),
+		).toEqual([
+			{ id: "claude-opus-5-5", name: "Claude Opus 5.5", contextWindow: 1_000_000, maxTokens: 128_000 },
+			{ id: "claude-sonnet-5-5", name: "Claude Sonnet 5.5", contextWindow: 1_000_000, maxTokens: 128_000 },
+			{ id: "claude-haiku-4-5", name: "Claude Haiku 4.5", contextWindow: 200_000, maxTokens: 64_000 },
+		]);
+	});
+
+	it("exposes thinking levels only where Claude supports effort selection", () => {
 		expect(claudeModels[0]?.thinking).toEqual({
 			mode: "effort",
 			efforts: ["low", "medium", "high", "xhigh", "max"],
 			defaultLevel: "medium",
 		});
+		expect(claudeModels[1]?.thinking).toEqual({
+			mode: "effort",
+			efforts: ["low", "medium", "high", "xhigh", "max"],
+			defaultLevel: "high",
+		});
+		expect(claudeModels[2]?.reasoning).toBe(false);
+		expect(claudeModels[2]?.thinking).toBeUndefined();
 	});
 
 	it("preserves OMP system and user context for the nested CLI run", () => {

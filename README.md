@@ -1,6 +1,6 @@
 # OMP Claude Code Adapter
 
-An OMP custom model provider that runs the locally installed Claude Code CLI. It uses Claude Code's existing sign-in and exposes Claude's `opus`, `sonnet`, and `haiku` aliases, with OMP thinking levels forwarded as Claude Code effort settings.
+An OMP custom model provider that runs the locally authenticated Claude Code CLI. It pins the current Claude Opus 5.5, Sonnet 5.5, and Haiku 4.5 model IDs and exposes supported effort controls for Opus and Sonnet.
 
 ## Requirements
 
@@ -10,10 +10,16 @@ An OMP custom model provider that runs the locally installed Claude Code CLI. It
 
 ## Install
 
-Install the pinned release from OMP:
+Install from a tagged checkout. This repository is private, so the device must have GitHub access configured first:
 
 ```sh
-omp install github:Farrely-F/omp-claude-code-adapter#v1.0.0
+gh auth login
+gh auth setup-git
+gh repo clone Farrely-F/omp-claude-code-adapter
+cd omp-claude-code-adapter
+git checkout v1.0.1
+bun install --frozen-lockfile
+omp install .
 ```
 
 Start a new OMP session after installation. Confirm discovery with:
@@ -22,20 +28,26 @@ Start a new OMP session after installation. Confirm discovery with:
 omp models claude-code-cli
 ```
 
-The model IDs are `claude-code-cli/opus`, `claude-code-cli/sonnet`, and `claude-code-cli/haiku`. In the TUI, select a model with `/model`, then choose an OMP thinking level. CLI example:
+Select the explicitly versioned models with `/model`:
+
+- `claude-code-cli/claude-opus-5-5` — 1M context, 128K output; effort levels `low`, `medium`, `high`, `xhigh`, `max` (default `medium`).
+- `claude-code-cli/claude-sonnet-5-5` — 1M context, 128K output; effort levels `low`, `medium`, `high`, `xhigh`, `max` (default `high`).
+- `claude-code-cli/claude-haiku-4-5` — 200K context, 64K output; Haiku supports extended thinking, but this adapter does not expose its budget control.
+
+These IDs are passed to Claude Code as pinned model IDs instead of mutable `opus`/`sonnet`/`haiku` aliases. Use OMP's `--thinking` flag for Opus and Sonnet, for example:
 
 ```sh
-omp --model claude-code-cli/sonnet --thinking high
+omp --model claude-code-cli/claude-sonnet-5-5 --thinking high
 ```
 
-Supported effort levels: `low`, `medium`, `high`, `xhigh`, and `max`; the default is `medium`. Claude Code and the signed-in account determine which models and effort levels are actually available.
+Specs: [Opus 5.5](https://platform.claude.com/docs/en/models/opus-5-5/overview), [Sonnet 5.5](https://platform.claude.com/docs/en/models/sonnet-5-5/overview), [Haiku 4.5](https://platform.claude.com/docs/en/models/haiku-4-5/overview). OMP displays the published model limits; Claude Code's account and local context settings may further restrict effective capacity.
 
 ## Security and behavior
 
 - The adapter starts `claude -p` in OMP's current working directory and forwards the OMP system prompt and conversation.
 - Claude Code handles its own tools and permissions. OMP's tool approval settings do not control actions taken by the nested CLI. The adapter does not set a permissive Claude Code permission mode; headless actions that require a prompt may be denied unless configured in Claude Code itself.
 - The adapter removes `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, and `ANTHROPIC_OAUTH_TOKEN` from the child environment so Claude Code uses its own local authentication.
-- OMP context is text-only. Image context is rejected.
+- All three upstream models accept images, but this adapter currently forwards only text and rejects image blocks; it does not transfer OMP's inline image data to Claude Code.
 - Set `CLAUDE_CODE_CLI` if the executable is not available as `claude` on `PATH`.
 
 ## Local development
@@ -43,7 +55,7 @@ Supported effort levels: `low`, `medium`, `high`, `xhigh`, and `max`; the defaul
 ```sh
 bun install --frozen-lockfile
 bun test
-omp --extension . --model claude-code-cli/haiku --thinking low
+omp --extension . --model claude-code-cli/claude-sonnet-5-5 --thinking high
 ```
 
 The last command loads the extension directly from this checkout for a one-off session.

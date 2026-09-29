@@ -36,42 +36,65 @@ type ClaudeModelConfig = {
 	maxTokens: number;
 	supportsTools: boolean;
 	reasoning: boolean;
-	thinking: { mode: "effort"; efforts: ClaudeEffort[]; defaultLevel: ClaudeEffort };
+	thinking?: { mode: "effort"; efforts: ClaudeEffort[]; defaultLevel: ClaudeEffort };
 };
 
-export const claudeModels: ClaudeModelConfig[] = ["opus", "sonnet", "haiku"].map(id => ({
-	id,
-	name: `Claude ${id[0]?.toUpperCase()}${id.slice(1)} (subscription SSO)`,
-	input: ["text"],
-	contextWindow: 200_000,
-	maxTokens: 16_384,
-	supportsTools: false,
-	reasoning: true,
-	thinking: {
-		mode: "effort",
-		efforts: ["low", "medium", "high", "xhigh", "max"],
-		defaultLevel: "medium",
-	},
-}));
+const opusEffort: ClaudeModelConfig["thinking"] = {
+	mode: "effort",
+	efforts: ["low", "medium", "high", "xhigh", "max"],
+	defaultLevel: "medium",
+};
 
-export function buildClaudeArgs(prompt: string, modelId: string, effort: ClaudeEffort): string[] {
-	return [
-		"-p",
-		prompt,
-		"--output-format",
-		"stream-json",
-		"--verbose",
-		"--include-partial-messages",
-		"--model",
-		modelId,
-		"--effort",
-		effort,
-	];
+const sonnetEffort: ClaudeModelConfig["thinking"] = {
+	mode: "effort",
+	efforts: ["low", "medium", "high", "xhigh", "max"],
+	defaultLevel: "high",
+};
+
+export const claudeModels: ClaudeModelConfig[] = [
+	{
+		id: "claude-opus-5-5",
+		name: "Claude Opus 5.5",
+		input: ["text"],
+		contextWindow: 1_000_000,
+		maxTokens: 128_000,
+		supportsTools: false,
+		reasoning: true,
+		thinking: opusEffort,
+	},
+	{
+		id: "claude-sonnet-5-5",
+		name: "Claude Sonnet 5.5",
+		input: ["text"],
+		contextWindow: 1_000_000,
+		maxTokens: 128_000,
+		supportsTools: false,
+		reasoning: true,
+		thinking: sonnetEffort,
+	},
+	{
+		id: "claude-haiku-4-5",
+		name: "Claude Haiku 4.5",
+		input: ["text"],
+		contextWindow: 200_000,
+		maxTokens: 64_000,
+		supportsTools: false,
+		reasoning: false,
+	},
+];
+
+export function buildClaudeArgs(prompt: string, modelId: string, effort?: ClaudeEffort): string[] {
+	const args = ["-p", prompt, "--output-format", "stream-json", "--verbose", "--include-partial-messages", "--model", modelId];
+	if (effort) args.push("--effort", effort);
+	return args;
 }
 
-function resolveClaudeEffort(effort: SimpleStreamOptions["reasoning"] | undefined): ClaudeEffort {
+function resolveClaudeEffort(
+	effort: SimpleStreamOptions["reasoning"] | undefined,
+	defaultLevel: ClaudeEffort,
+): ClaudeEffort {
 	if (effort === "minimal") return "low";
-	return effort ?? "medium";
+	return effort ?? defaultLevel;
 }
 
 function renderContent(content: string | Array<{ type: string } & object>): string {
@@ -209,8 +232,12 @@ function streamClaudeCode(
 		const prompt = formatContext(context);
 		const env = { ...process.env };
 		for (const key of ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_OAUTH_TOKEN"]) delete env[key];
+		const selectedModel = claudeModels.find(candidate => candidate.id === model.id);
+		const effort = selectedModel?.thinking
+			? resolveClaudeEffort(options?.reasoning, selectedModel.thinking.defaultLevel)
+			: undefined;
 		const command = process.env.CLAUDE_CODE_CLI || "claude";
-		const child = spawn(command, buildClaudeArgs(prompt, model.id, resolveClaudeEffort(options?.reasoning)), {
+		const child = spawn(command, buildClaudeArgs(prompt, model.id, effort), {
 			cwd: process.cwd(),
 			env,
 			stdio: ["ignore", "pipe", "pipe"],
